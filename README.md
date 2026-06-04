@@ -1,18 +1,30 @@
 # ContextFold: The AI Memory Engine
 
+<details>
+  <summary><b>Table of Contents</b></summary>
+  <ul>
+    <li><a href="#who-is-this-for">Who is this for?</a></li>
+    <li><a href="#how-do-you-use-it">How do you use it?</a></li>
+    <li><a href="#the-tech-stack-under-the-hood">Tech Stack</a></li>
+    <li><a href="#quickstart">Quickstart</a></li>
+    <li><a href="#examples">Examples</a></li>
+    <li><a href="#license--liability">License</a></li>
+  </ul>
+</details>
+
 AI models have goldfish memory. ContextFold is a lightweight, open-source memory layer for LLMs that fixes this without racking up a massive cloud bill. 
 
-It actively ingests your chat history, vectorizes it locally, and runs a background task to compress everything. This gives your AI agents long-term context without eating up all your API tokens.
+It actively ingests your chat history, vectorizes it locally and runs a background task to compress everything. This gives your AI agents long term context without eating up all your API tokens.
 
 ---
 
 ## Who is this for?
 * Devs building AI agents.
 * Founders hacking together MVPs who don't want the bloat of massive vector frameworks.
-* Anyone building chatbots that need long-term memory without insane API costs.
+* Anyone building chatbots that need long term memory without insane API costs.
 
 ## How do you use it?
-ContextFold is designed as a headless microservice. You don't need to install a massive package into your core app. You just spin this up in Docker, and your main application—whether it's Python, Node.js, or a frontend—simply sends HTTP POST requests to `http://localhost:8000`. It acts as a standalone brain for your project.
+ContextFold is designed as a headless microservice. You don't need to install a massive package into your core app. You just spin this up in Docker and your main application, whether it's Python, Node.js or a frontend, simply sends HTTP POST requests to `http://localhost:8000`. It acts as a standalone brain for your project.
 
 ---
 
@@ -23,7 +35,7 @@ Here is how the system is put together:
 * **FastAPI (The Engine):** We chose FastAPI because it's crazy fast and handles async I/O out of the box. It easily manages concurrent users streaming data without locking up the thread.
 * **PostgreSQL + pgvector (The Vault):** No toy databases here. We use Postgres with the `pgvector` extension and an HNSW index. Even if you dump a million memories into it, semantic search is blazing fast.
 * **fastembed (The Money Saver):** Generating vector embeddings usually requires paying OpenAI. We integrated `fastembed` to do text-to-vector math directly on your local CPU for free.
-* **OpenRouter (The Janitor's Brain):** A background worker compresses long chat histories. We use OpenRouter so you aren't locked into one vendor—swap between Claude, Llama 3, or Mistral whenever you want.
+* **OpenRouter (The Janitor's Brain):** A background worker compresses long chat histories. We use OpenRouter so you aren't locked into one vendor—swap between Claude, Llama 3 or Mistral whenever you want.
 * **WebSockets (The Walkie-Talkie):** HTTP requests aren't always enough for real-time agents. WebSockets keep a persistent, two-way connection open for low-latency streaming.
 * **slowapi & tenacity (The Shields):** `slowapi` handles rate limits to stop spam, and `tenacity` provides exponential backoff. If OpenRouter goes down, the background summarizer just waits 2 seconds and tries again.
 
