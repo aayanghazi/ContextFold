@@ -199,17 +199,18 @@ async def summarize_chat(request: SummarizeRequest, db: AsyncSession = Depends(g
     return {"conversation_id": request.conversation_id, "summary": summary}
 
 @router.get("/search/")
-async def search_chats(keyword: str = Query(..., description="Keyword to search in chats"), db: AsyncSession = Depends(get_db), api_key: str = Depends(get_api_key)):
+async def search_chats(user_id: str = Query(..., description="Filter by user"), keyword: str = Query(..., description="Keyword to search in chats"), db: AsyncSession = Depends(get_db), api_key: str = Depends(get_api_key)):
     import re
     safe_keyword = re.escape(keyword)
     result = await db.execute(
-        select(ChatMessage).filter(ChatMessage.message.ilike(f"%{safe_keyword}%"))
+        select(ChatMessage).filter(ChatMessage.message.ilike(f"%{safe_keyword}%")).filter(ChatMessage.user_id == user_id)
     )
     chats = result.scalars().all()
     return [{"id": msg.id, "user_id": msg.user_id, "conversation_id": msg.conversation_id, "message": msg.message} for msg in chats]
 
 @router.get("/semantic_search/")
 async def semantic_search_chats(
+    user_id: str = Query(..., description="Filter by user"),
     query: str = Query(..., description="Query for semantic search"),
     limit: int = Query(5, description="Number of results to return"),
     db: AsyncSession = Depends(get_db),
@@ -219,6 +220,7 @@ async def semantic_search_chats(
     
     result = await db.execute(
         select(ChatMessage)
+        .filter(ChatMessage.user_id == user_id)
         .order_by(ChatMessage.embedding.cosine_distance(emb))
         .limit(limit)
     )
@@ -305,9 +307,15 @@ async def websocket_endpoint(websocket: WebSocket, conversation_id: str):
         await websocket.close(code=1008, reason="Could not validate API KEY")
         return
     await websocket.accept()
+    last_message_time = 0.0
     try:
         while True:
             data = await websocket.receive_text()
+            current_time = time.time()
+            if current_time - last_message_time < 0.5:
+                await websocket.send_text("Error: Rate limit exceeded. Please slow down.")
+                continue
+            last_message_time = current_time
             if len(data) > 2000:
                 await websocket.send_text("Error: Message exceeds maximum length of 2000 characters.")
                 continue
