@@ -48,47 +48,55 @@ async def call_openrouter_async(api_key: str, chat_text: str):
         response.raise_for_status()
         return response.json()
 
+active_summarizations = set()
+
 async def background_summarize_thread(conversation_id: str):
-    async with SessionLocal() as db:
-        result = await db.execute(
-            select(ChatMessage)
-            .filter(ChatMessage.conversation_id == conversation_id)
-            .order_by(ChatMessage.timestamp.asc())
-            .limit(50)
-        )
-        chats = result.scalars().all()
-        
-        if len(chats) < 50:
-            return
+    if conversation_id in active_summarizations:
+        return
+    active_summarizations.add(conversation_id)
+    try:
+        async with SessionLocal() as db:
+            result = await db.execute(
+                select(ChatMessage)
+                .filter(ChatMessage.conversation_id == conversation_id)
+                .order_by(ChatMessage.timestamp.asc())
+                .limit(50)
+            )
+            chats = result.scalars().all()
             
-        chat_text = "\n".join([chat.message for chat in chats])
-        
-        try:
-            load_dotenv()
-            api_key = os.getenv("ChatSum_API") or os.getenv("CHATSUM_API")
-            response_json = await call_openrouter_async(api_key, chat_text)
-            if "error" in response_json:
-                print(f"Error in background summarization: {response_json['error']}")
+            if len(chats) < 50:
                 return
-            summary = response_json["choices"][0]["message"]["content"]
-        except Exception as e:
-            print(f"Exception in OpenRouter call: {str(e)}")
-            return
+                
+            chat_text = "\n".join([chat.message for chat in chats])
             
-        emb = await generate_embedding(summary)
-        
-        summary_chat = ChatMessage(
-            user_id="system",
-            conversation_id=conversation_id,
-            message=summary,
-            timestamp=datetime.utcnow(),
-            embedding=emb
-        )
-        db.add(summary_chat)
-        
-        chat_ids = [chat.id for chat in chats]
-        await db.execute(delete(ChatMessage).where(ChatMessage.id.in_(chat_ids)))
-        await db.commit()
+            try:
+                load_dotenv()
+                api_key = os.getenv("ChatSum_API") or os.getenv("CHATSUM_API")
+                response_json = await call_openrouter_async(api_key, chat_text)
+                if "error" in response_json:
+                    print(f"Error in background summarization: {response_json['error']}")
+                    return
+                summary = response_json["choices"][0]["message"]["content"]
+            except Exception as e:
+                print(f"Exception in OpenRouter call: {str(e)}")
+                return
+                
+            emb = await generate_embedding(summary)
+            
+            summary_chat = ChatMessage(
+                user_id="system",
+                conversation_id=conversation_id,
+                message=summary,
+                timestamp=datetime.utcnow(),
+                embedding=emb
+            )
+            db.add(summary_chat)
+            
+            chat_ids = [chat.id for chat in chats]
+            await db.execute(delete(ChatMessage).where(ChatMessage.id.in_(chat_ids)))
+            await db.commit()
+    finally:
+        active_summarizations.remove(conversation_id)
 
 load_dotenv()
 OPENROUTER_API_KEY = os.getenv("CHATSUM_API")
@@ -211,7 +219,7 @@ async def semantic_search_chats(
 @router.get("/users/{user_id}")
 async def get_user_chats(
     user_id: str, 
-    page: int = Query(1, description="Page number"), 
+    page: int = Query(1, ge=1, description="Page number"), 
     limit: int = Query(10, description="Items per page"), 
     db: AsyncSession = Depends(get_db),
     api_key: str = Depends(get_api_key)
@@ -246,7 +254,7 @@ async def get_user_chats(
 @router.get("/{conversation_id}")
 async def get_chats(
     conversation_id: str, 
-    page: int = Query(1, description="Page number"), 
+    page: int = Query(1, ge=1, description="Page number"), 
     limit: int = Query(50, description="Items per page"), 
     db: AsyncSession = Depends(get_db), 
     api_key: str = Depends(get_api_key)
