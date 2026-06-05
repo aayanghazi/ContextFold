@@ -6,8 +6,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 db_url = os.getenv("DATABASE_URL")
-if not db_url:
-    raise ValueError("DATABASE_URL environment variable is not set!")
+if not db_url or "tiger" in db_url:
+    raise RuntimeError("CRITICAL FAILURE: Secure DATABASE_URL must be set in .env")
 else:
     if db_url.startswith("postgresql://"):
         DATABASE_URL = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)

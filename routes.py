@@ -11,6 +11,7 @@ from models import ChatMessage
 from pydantic import BaseModel, Field
 from datetime import datetime
 import asyncio
+import time
 from fastembed import TextEmbedding
 import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -48,11 +49,16 @@ async def call_openrouter_async(api_key: str, chat_text: str):
         response.raise_for_status()
         return response.json()
 
+failed_summarizations_cooldown = {}
 active_summarizations = set()
 
 async def background_summarize_thread(conversation_id: str):
     if conversation_id in active_summarizations:
         return
+    if conversation_id in failed_summarizations_cooldown:
+        if time.time() - failed_summarizations_cooldown[conversation_id] < 300:
+            return
+            
     active_summarizations.add(conversation_id)
     try:
         async with SessionLocal() as db:
@@ -79,6 +85,7 @@ async def background_summarize_thread(conversation_id: str):
                 summary = response_json["choices"][0]["message"]["content"]
             except Exception as e:
                 print(f"Exception in OpenRouter call: {str(e)}")
+                failed_summarizations_cooldown[conversation_id] = time.time()
                 return
                 
             emb = await generate_embedding(summary)
@@ -118,7 +125,7 @@ router = APIRouter()
 class ChatCreate(BaseModel):
     user_id: str = Field(..., max_length=100)
     conversation_id: str = Field(..., max_length=100)
-    message: str = Field(..., max_length=2000)
+    message: str = Field(..., max_length=4000)
 
 class SummarizeRequest(BaseModel):
     conversation_id: str
@@ -333,4 +340,4 @@ async def websocket_endpoint(websocket: WebSocket, conversation_id: str):
             
             await websocket.send_text(f"Message confirmed: {data}")
     except WebSocketDisconnect:
-        print(f"Client disconnected from conversation {conversation_id}")
+        print(f"Client gracefully disconnected from conversation {conversation_id}")
