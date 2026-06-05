@@ -9,6 +9,8 @@ services:
       POSTGRES_DB: chatdb
     ports:
       - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
 
   app:
     build: .
@@ -18,3 +20,6 @@ services:
       - db
     environment:
       - DATABASE_URL=postgresql+asyncpg://postgres:tiger@db:5432/chatdb
+
+volumes:
+  pgdata:

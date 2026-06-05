@@ -103,7 +103,9 @@ OPENROUTER_API_KEY = os.getenv("CHATSUM_API")
 if not OPENROUTER_API_KEY:
     raise RuntimeError("API Key not found. Check your .env file!")
 
-APP_API_KEY = os.getenv("APP_API_KEY", "default_secret_key")
+APP_API_KEY = os.getenv("APP_API_KEY")
+if not APP_API_KEY or APP_API_KEY in ("your_super_secret_key", "default_secret_key"):
+    raise RuntimeError("CRITICAL FAILURE: APP_API_KEY is unset or insecure in .env file")
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 async def get_api_key(api_key: str = Security(api_key_header)):
@@ -289,7 +291,7 @@ async def delete_chat(chat_id: int, db: AsyncSession = Depends(get_db), api_key:
     return {"message": f"Chat {chat_id} deleted successfully"}
 
 @router.websocket("/ws/{conversation_id}")
-async def websocket_endpoint(websocket: WebSocket, conversation_id: str, db: AsyncSession = Depends(get_db)):
+async def websocket_endpoint(websocket: WebSocket, conversation_id: str):
     # Authenticate WebSocket before accepting
     api_key = websocket.headers.get("x-api-key") or websocket.query_params.get("api_key")
     if api_key != APP_API_KEY:
@@ -305,28 +307,29 @@ async def websocket_endpoint(websocket: WebSocket, conversation_id: str, db: Asy
                 
             print(f"Message received for conversation {conversation_id}: {data}")
             
-            # Generate embedding and save to database
-            try:
-                emb = await generate_embedding(data)
-                new_chat = ChatMessage(
-                    user_id="websocket_user", 
-                    conversation_id=conversation_id,
-                    message=data,
-                    timestamp=datetime.utcnow(),
-                    embedding=emb
-                )
-                db.add(new_chat)
-                await db.commit()
-            except Exception as e:
-                await db.rollback()
-                await websocket.send_text(f"Internal error processing message: {str(e)}")
-                continue
-            
-            count_result = await db.execute(select(func.count(ChatMessage.id)).filter(ChatMessage.conversation_id == conversation_id))
-            count = count_result.scalar()
-            
-            if count >= 50:
-                asyncio.create_task(background_summarize_thread(conversation_id))
+            async with SessionLocal() as db:
+                # Generate embedding and save to database
+                try:
+                    emb = await generate_embedding(data)
+                    new_chat = ChatMessage(
+                        user_id="websocket_user", 
+                        conversation_id=conversation_id,
+                        message=data,
+                        timestamp=datetime.utcnow(),
+                        embedding=emb
+                    )
+                    db.add(new_chat)
+                    await db.commit()
+                except Exception as e:
+                    await db.rollback()
+                    await websocket.send_text(f"Internal error processing message: {str(e)}")
+                    continue
+                
+                count_result = await db.execute(select(func.count(ChatMessage.id)).filter(ChatMessage.conversation_id == conversation_id))
+                count = count_result.scalar()
+                
+                if count >= 50:
+                    asyncio.create_task(background_summarize_thread(conversation_id))
             
             await websocket.send_text(f"Message confirmed: {data}")
     except WebSocketDisconnect:
