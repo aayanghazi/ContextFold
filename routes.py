@@ -73,6 +73,7 @@ async def background_summarize_thread(conversation_id: str):
             if len(chats) < 50:
                 return
                 
+            tenant_user_id = chats[0].user_id
             chat_text = "\n".join([chat.message for chat in chats])
             
             try:
@@ -91,7 +92,7 @@ async def background_summarize_thread(conversation_id: str):
             emb = await generate_embedding(summary)
             
             summary_chat = ChatMessage(
-                user_id="system",
+                user_id=tenant_user_id,
                 conversation_id=conversation_id,
                 message=summary,
                 timestamp=datetime.utcnow(),
@@ -159,7 +160,12 @@ async def create_chat(request: Request, chat: ChatCreate, background_tasks: Back
 
 @router.post("/summarize")
 async def summarize_chat(request: SummarizeRequest, db: AsyncSession = Depends(get_db), api_key: str = Depends(get_api_key)):
-    result = await db.execute(select(ChatMessage).filter(ChatMessage.conversation_id == request.conversation_id))
+    result = await db.execute(
+        select(ChatMessage)
+        .filter(ChatMessage.conversation_id == request.conversation_id)
+        .order_by(ChatMessage.timestamp.desc())
+        .limit(100)
+    )
     chats = result.scalars().all()
 
     if not chats:

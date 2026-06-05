@@ -30,9 +30,9 @@ class AIMemoryClient:
         response.raise_for_status()
         return response.json()
 
-    async def semantic_search(self, query: str) -> list:
-        """Performs a semantic search across all chats."""
-        response = await self.client.get("/chats/semantic_search/", params={"query": query})
+    async def semantic_search(self, user_id: str, query: str) -> list:
+        """Performs a semantic search across all chats for a specific user."""
+        response = await self.client.get("/chats/semantic_search/", params={"user_id": user_id, "query": query})
         response.raise_for_status()
         return response.json()
 
